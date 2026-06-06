@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: radioclub-mysql
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: radioclub
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_USER: radioclub
+      MYSQL_PASSWORD: secret
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - radioclub-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./radioclub-service
+      dockerfile: Dockerfile
+    container_name: radioclub-backend
+    restart: unless-stopped
+    working_dir: /var/www/html
+    volumes:
+      - ./radioclub-service:/var/www/html
+      - ./radioclub-service/storage:/var/www/html/storage
+      - ./radioclub-service/bootstrap/cache:/var/www/html/bootstrap/cache
+    networks:
+      - radioclub-network
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      - DB_HOST=mysql
+      - DB_PORT=3306
+      - DB_DATABASE=radioclub
+      - DB_USERNAME=root
+      - DB_PASSWORD=root
+
+  backend-nginx:
+    image: nginx:alpine
+    container_name: radioclub-backend-nginx
+    restart: unless-stopped
+    ports:
+      - "8000:80"
+    volumes:
+      - ./radioclub-service:/var/www/html
+      - ./radioclub-service/docker/nginx/default.conf:/etc/nginx/conf.d/default.conf
+    networks:
+      - radioclub-network
+    depends_on:
+      - backend
+
+  frontend:
+    build:
+      context: ./radioclub-studio
+      dockerfile: Dockerfile
+    container_name: radioclub-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    networks:
+      - radioclub-network
+    depends_on:
+      - backend-nginx
+
+networks:
+  radioclub-network:
+    driver: bridge
+
+volumes:
+  mysql-data:
+    driver: local
